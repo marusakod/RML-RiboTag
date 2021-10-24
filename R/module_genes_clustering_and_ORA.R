@@ -323,7 +323,7 @@ allCells_FG_clustering_GO_ORA_nonredundant_results <-sapply(X = allCells_FG_clus
                                                             sapply(X = x, FUN = reduce_GO_enrichment_results, simplify = FALSE, USE.NAMES = TRUE)
                                                               }, simplify = FALSE, USE.NAMES = TRUE)
 
-
+save.image(file="DataOut1.RData")
 ###########################################################################
 #       make edgelists and node tables for Gephi
 ##########################################################################
@@ -335,8 +335,9 @@ allCells_FG_clustering_GO_ORA_nonredundant_results <-sapply(X = allCells_FG_clus
 # min_vertices: the minimum # of vertices a connected component has to contain in order to be considered a part of a disease module
 # min_cluster_size: the clusters with size < min_cluster_size are assigned cluster membership 0
 
+STRING_mouse_700_removed_duplicates <- readRDS("./data/STRING_mouse_700_removed_duplicates_extended.rds")
+
 get_final_node_and_edge_data <- function(clustering_results, PPI, min_vertices, min_cluster_size){
-  
   
   all_module_genes <- clustering_results$Id
   
@@ -392,6 +393,8 @@ allCells_all_node_and_edge_data <- mapply(clustering_results = all_cells_cluster
                                           SIMPLIFY = FALSE,
                                           USE.NAMES = TRUE)
 
+save.image(file="DataOut2.RData")
+
 for(i in 1:3){
   writexl::write_xlsx(allCells_all_node_and_edge_data[[i]]$edges, paste(names(allCells_all_node_and_edge_data)[i], "supplement_modules_edges", ".xlsx", sep = "" ))
 }
@@ -400,4 +403,4 @@ for(i in 1:3){
   writexl::write_xlsx(allCells_all_node_and_edge_data[[i]]$nodes, paste(names(allCells_all_node_and_edge_data)[i], "supplement_modules_nodes", ".xlsx", sep = "" ))
 }
 
-
+save.image(file="DataOut3.RData")
