@@ -318,12 +318,111 @@ for(i in 1:3){
 }
 
 
-allCells_FG_clustering_GO_ORA_nonredundant_results <-sapply(X = allCells_FG_clustering_GO_ORA_no_geneID_vecs, 
+allCells_FG_clustering_GO_ORA_nonredundant.results <-sapply(X = allCells_FG_clustering_GO_ORA_no_geneID_vecs, 
                                                             FUN = function(x){
                                                             sapply(X = x, FUN = reduce_GO_enrichment_results, simplify = FALSE, USE.NAMES = TRUE)
                                                               }, simplify = FALSE, USE.NAMES = TRUE)
 
-save.image(file="DataOut1.RData")
+
+
+# edit ORA results
+
+# convert specific words in gene_set_name to caps
+case_convert <- function(x){
+
+  x <- tolower(substring(x, 1))
+  
+  caps_words <- c("atp", "gtp", "rna", "snap", "5s", "dna", "amp", "nadh")
+  
+  position <- na.omit(as.data.frame(str_locate(x, pattern  = caps_words)))
+  
+
+  if(nrow(position) == 0){
+    a <- toupper(substring(x, 1,1))
+    b <- tolower(substring(x, 2))
+    return(paste(a, b, sep = ""))
+      
+    
+  } else{
+    a <- toupper(substring(x, 1,1))
+    b <- tolower(substring(x, 2))
+    ab <- paste(a, b, sep = "")
+      i <- 1
+      while(i <= nrow(position)){
+      ab <- str_replace_all(ab, pattern = substr(ab, position[i,1], position[i,2]), replacement = toupper(substr(ab, position[i,1], position[i,2])))
+       i <- i+1 
+      }
+      
+      return(ab)
+      }
+    }
+      
+
+# covert GeneRatio to numeric
+
+make_GeneRatio_numeric <- function(x){
+  y <- parse_number(str_split_fixed(x, pattern = "/", n =2))[1]/parse_number(str_split_fixed(x, pattern = "/", n =2))[2]
+  y
+}
+
+
+
+# arrange gene_set_name into multiple lines
+
+line_splitter <- function(x){
+  
+  y <- x
+  x <- unlist(strsplit(x, split = " "))
+  
+  if (length(x) < 5){
+    return(y)
+  }else if(length(x) == 5) {
+    paste0(x[1], " ", x[2], "\n",
+           paste0(x[3:length(x)], sep = " ", collapse = "")
+    )
+  }else if(length(x) == 6) {
+    paste0(x[1], " ", x[2], " ", x[3],"\n",
+           paste0(x[4:length(x)], sep = " ", collapse = "")
+    )
+  }else if(length(x) == 7) {
+    paste0(x[1], " ", x[2], " ", x[3],"\n",
+           paste0(x[4:length(x)], sep = " ", collapse = "")
+    )
+  }else if(length(x) == 8) {
+    paste0(x[1], " ", x[2], " ", x[3], " ", x[4],"\n",
+           paste0(x[5:length(x)], sep = " ", collapse = "")
+    )
+  }else{
+    paste0(x[1], " ", x[2], " ", x[3], " ", x[4], " ", x[5],"\n",
+           paste0(x[6:length(x)], sep = " ", collapse = "")
+    )
+  }
+}
+
+
+
+
+allCells_FG_clustering_GO_ORA_nonredundant_results_final <- sapply(X = unlist(allCells_FG_clustering_GO_ORA_nonredundant_results, recursive = FALSE),
+                                                               FUN = function(x){
+                                                                 y <- x %>% 
+                                                                      mutate(category = substr(Description, 4, 5)) %>%
+                                                                      separate(Description, into = c(NA, NA, "gene_set_name"), sep = "_", remove = TRUE, extra = "merge")
+                                                                 
+                                                                 y$gene_set_name <- str_replace_all(y$gene_set_name, pattern = "_", replacement = " ")
+                                                                 y$gene_set_name <- sapply(y$gene_set_name, FUN = case_convert)
+                                                                 y$gene_set_name <- sapply(y$gene_set_name, FUN = line_splitter)
+                                                                 y$GeneRatio_numeric <- sapply(y$GeneRatio, FUN = make_GeneRatio_numeric)
+                                                                 y$category <- factor(y$category, levels = c("BP", "CC", "MF"))
+                                                                 y <- y %>% group_by(category) %>% arrange(desc(GeneRatio_numeric), .by_group = TRUE )
+                                                                 y
+                                                               },
+                                                        simplify = FALSE,
+                                                        USE.NAMES = TRUE)
+
+
+saveRDS(allCells_FG_clustering_GO_ORA_nonredundant_results_final, "output/allCells_FG_clustering_GO_ORA_nonredundant_results_final.rds", compress = TRUE)
+
+
 ###########################################################################
 #       make edgelists and node tables for Gephi
 ##########################################################################
@@ -350,10 +449,8 @@ get_final_node_and_edge_data <- function(clustering_results, PPI, min_vertices, 
   #merge components with more than min_vertices vertices in a single igraph
   decomposed_graph_vertices <- unlist(sapply(X = decomposed_graph, FUN = function(x){as_ids(V(x))}, simplify = TRUE))
   
-  clustering_results_filtered<- clustering_results %>% dplyr::filter(Id %in% decomposed_graph_vertices)# %>%
-  #dplyr::select(-DE_pvalue)
-  #clustering_results_filtered$FDR <- as.integer(clustering_results_filtered$FDR*1000) 
-  
+  clustering_results_filtered<- clustering_results %>% dplyr::filter(Id %in% decomposed_graph_vertices)
+
   
   clustering_results_filtered$clust_membership_fg[which(clustering_results_filtered$clust_membership_fg %in% as.double(names(which(table(clustering_results_filtered$clust_membership_fg) < min_cluster_size))))] <- 0
   clustering_results_filtered$clust_membership_wt[which(clustering_results_filtered$clust_membership_wt %in% as.double(names(which(table(clustering_results_filtered$clust_membership_wt) < min_cluster_size))))] <- 0
@@ -393,14 +490,129 @@ allCells_all_node_and_edge_data <- mapply(clustering_results = all_cells_cluster
                                           SIMPLIFY = FALSE,
                                           USE.NAMES = TRUE)
 
-save.image(file="DataOut2.RData")
+
+#=======================================================================================
+#                         visualize ORA results
+#=======================================================================================
+
+
+# select ORA results for clusters that are in the final module
+final_modules_cluster_numbers <- vector("list", 3)
 
 for(i in 1:3){
-  writexl::write_xlsx(allCells_all_node_and_edge_data[[i]]$edges, paste(names(allCells_all_node_and_edge_data)[i], "supplement_modules_edges", ".xlsx", sep = "" ))
+  x <- unique(allCells_all_node_and_edge_data[[i]]$nodes$clust_membership_fg)
+  final_modules_cluster_numbers[[i]] <- paste(names(allCells_all_node_and_edge_data)[i], ".cluster_", x, ".ORA_results", sep = "")
+  names(final_modules_cluster_numbers)[i] <- names(allCells_all_node_and_edge_data)[i]
+}
+
+vGluT2_ORA_results_for_plots <- allCells_FG_clustering_GO_ORA_nonredundant_results_final[final_modules_cluster_numbers$vGluT2] 
+Gad2_ORA_results_for_plots <- allCells_FG_clustering_GO_ORA_nonredundant_results_final[final_modules_cluster_numbers$Gad2] 
+Cx43_ORA_results_for_plots <- allCells_FG_clustering_GO_ORA_nonredundant_results_final[final_modules_cluster_numbers$Cx43] 
+
+
+# select top 3 categories for each cluster:
+
+get_top_GO <- function(x){
+  y <- x %>% 
+       group_by(category) %>% 
+       top_n(3, -log10(p.adjust)) %>% 
+       select(gene_set_name, category, GeneRatio_numeric, p.adjust)
+  y
+  
+}
+
+Cx43_top_ORA <- sapply(Cx43_ORA_results_for_plots, FUN = get_top_GO, simplify = FALSE, USE.NAMES = TRUE)
+Gad2_top_ORA <- sapply(Gad2_ORA_results_for_plots, FUN = get_top_GO, simplify = FALSE, USE.NAMES = TRUE)
+vGluT2_top_ORA <- sapply(vGluT2_ORA_results_for_plots, FUN = get_top_GO, simplify = FALSE, USE.NAMES = TRUE)
+
+# make ORA plots for all clusters in disease modules
+
+make_ORA_bar_plots <- function(ORA_df, cluster_color){
+
+
+p <- ggplot(ORA_df, aes(x = GeneRatio_numeric, y = reorder(gene_set_name, GeneRatio_numeric))) +
+  theme_gray() +
+
+  geom_bar(stat = "identity",fill = cluster_color, color = "black", width = 0.98) +
+  
+  labs(y = NULL, x = "Gene ratio") +
+  
+  facet_grid(rows = vars(category), scales = "free_y", space = "free_y") +
+  
+
+  theme(strip.text = element_text(size = 8.9),
+        strip.placement = "outside",
+        strip.background = element_blank(),
+        axis.title.x = element_text(size = 8.9, face = "bold"),
+        axis.text.x  = element_text(size = 6.2),
+        axis.text.y = element_text(size = 6.5),
+        panel.background = element_rect(fill = "#E5E7E9", color = "#E5E7E9"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.spacing = unit(0.12, "lines")
+       
+        )
+
+p
+
+}
+
+
+vGluT2_cluster_colors <- c("#E9F28E", "#69C404", "#00C7FF", "#FFDF2A", "#FA9200", "#D3B3B0", "#EDB8FF", "#CDD9EF", "#FF5D85", "#54D6B1")
+Gad2_cluster_colors <- c("#FF5D85", "#69C404", "#FA9200", "#00C7FF", "#EDB8FF", "#FFDF2A", "#D3B3B0")
+Cx43_cluster_colors <- c("#69C404", "#FFDF2A", "#FF5D85", "#FA9200", "#D3B3B0", "#EDB8FF", "#00C7FF")
+
+
+Cx43_clusters_ORA_plots <- mapply(ORA_df = Cx43_top_ORA, cluster_color = Cx43_cluster_colors, FUN = make_ORA_bar_plots, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+Gad2_clusters_ORA_plots <- mapply(ORA_df = Gad2_top_ORA, cluster_color = Gad2_cluster_colors, FUN = make_ORA_bar_plots, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+vGluT2_clusters_ORA_plots <- mapply(ORA_df = vGluT2_top_ORA, cluster_color = vGluT2_cluster_colors, FUN = make_ORA_bar_plots, SIMPLIFY = FALSE, USE.NAMES = TRUE)
+
+
+#===========================================
+# merge final node data with ORA results 
+#===========================================
+
+merge_node_table_with_ORA <- function(network_data, ORA_results){
+  
+dfs_list <- vector("list", length(ORA_results))
+
+for(i in 1:length(ORA_results)){
+  df <- data.frame(Id = unlist(str_split(ORA_results[[i]][1, 8], pattern = "/")))
+  GO_term  <- as.character(ORA_results[[i]][1,2])
+  df$GO_term <- rep(GO_term, nrow(df))
+  
+  dfs_list[[i]] <- df
+  
+}
+
+one_df <- bind_rows(dfs_list)
+
+complete_df <- merge(network_data$nodes, one_df, by = "Id", all.x = TRUE)
+
+complete_df$GO_term <- replace_na(complete_df$GO_term, "not_in_top_GO")
+
+list(nodes = complete_df, edges = network_data$edges)
+
+}
+
+
+allCells_all_node_and_edge_data_extended <- mapply(network_data = allCells_all_node_and_edge_data, 
+                                                   ORA_results = list(vGluT2_ORA_results_for_plots, Gad2_ORA_results_for_plots, Cx43_ORA_results_for_plots),
+                                                   FUN = merge_node_table_with_ORA,
+                                                   SIMPLIFY = FALSE,
+                                                   USE.NAMES = TRUE)
+
+
+library(writexl)
+
+for(i in 1:3){
+  writexl::write_xlsx(allCells_all_node_and_edge_data_extended[[i]]$edges, paste(names(allCells_all_node_and_edge_data_extended)[i], "modules_edges_main", ".xlsx", sep = "" ))
 }
 
 for(i in 1:3){
-  writexl::write_xlsx(allCells_all_node_and_edge_data[[i]]$nodes, paste(names(allCells_all_node_and_edge_data)[i], "supplement_modules_nodes", ".xlsx", sep = "" ))
+  writexl::write_xlsx(allCells_all_node_and_edge_data_extended[[i]]$nodes, paste(names(allCells_all_node_and_edge_data_extended)[i], "modules_nodes_main", ".xlsx", sep = "" ))
 }
 
-save.image(file="DataOut3.RData")
+
+
+
